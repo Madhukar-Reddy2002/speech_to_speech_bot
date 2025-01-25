@@ -1,33 +1,28 @@
 import streamlit as st
 import speech_recognition as sr
-import pyttsx3
+from gtts import gTTS
+import os
 import google.generativeai as genai
 
 class SpeechBot:
     def __init__(self):
+        # Configure Gemini API
         genai.configure(api_key="AIzaSyDgwigYRrAUJVga_0jzfRzfZY-MXGgf6nU")
         self.model = genai.GenerativeModel("gemini-1.5-flash")
-
+        
+        # Speech recognition setup
         self.recognizer = sr.Recognizer()
-        self.engine = pyttsx3.init()
-        self.engine.setProperty('rate', 150)
-        self.engine.setProperty('volume', 1)
 
-        self.is_listening = False
     def recognize_speech(self):
         try:
             with sr.Microphone() as source:
-                st.write("🎤 Listening... Please speak into the microphone.")
-                audio = self.recognizer.listen(source, timeout=10)
+                st.write("🎤 Listening... Speak now.")
+                audio = self.recognizer.listen(source, timeout=5)
                 text = self.recognizer.recognize_google(audio)
                 return text
-        except sr.WaitTimeoutError:
-            st.warning("Listening timed out.")
-        except sr.UnknownValueError:
-            st.warning("Sorry, I couldn't understand that.")
         except Exception as e:
-            st.error(f"Error: {e}")
-        return None
+            st.error(f"Speech recognition error: {e}")
+            return None
 
     def generate_response(self, input_text):
         try:
@@ -36,18 +31,30 @@ class SpeechBot:
         except Exception as e:
             return f"Error generating response: {e}"
 
-    def speak_response(self, text):
+    def text_to_speech(self, text):
         try:
-            self.engine.say(text)
-            self.engine.runAndWait()
+            tts = gTTS(text=text, lang='en')
+            audio_file = "response.mp3"
+            tts.save(audio_file)
+            
+            # Use a context manager to ensure file is closed
+            with open(audio_file, 'rb') as audio:
+                st.audio(audio, format='audio/mp3')
+            
+            # Attempt to remove file, but don't raise an error if it fails
+            try:
+                os.remove(audio_file)
+            except PermissionError:
+                pass
         except Exception as e:
-            st.error(f"Error in text-to-speech: {e}")
+            st.error(f"Text-to-speech error: {e}")
 
 def main():
     st.set_page_config(page_title="AI Chat Bot", page_icon="🤖")
     st.title("🤖 AI Chat Companion")
 
     bot = SpeechBot()
+
     if 'messages' not in st.session_state:
         st.session_state.messages = []
 
@@ -56,7 +63,6 @@ def main():
             st.markdown(message["content"])
 
     col1, col2 = st.columns(2)
-    user_input = None
 
     with col1:
         user_input = st.text_input("Type your message:")
@@ -64,8 +70,6 @@ def main():
     with col2:
         if st.button("🎤 Listen"):
             user_input = bot.recognize_speech()
-            if user_input:
-                st.write(f"You said: {user_input}")
 
     if user_input:
         st.session_state.messages.append({"role": "user", "content": user_input})
@@ -74,10 +78,11 @@ def main():
 
         bot_response = bot.generate_response(user_input)
         st.session_state.messages.append({"role": "assistant", "content": bot_response})
+        
         with st.chat_message("assistant"):
             st.markdown(bot_response)
-
-        bot.speak_response(bot_response)
+        
+        bot.text_to_speech(bot_response)
 
 if __name__ == "__main__":
     main()
